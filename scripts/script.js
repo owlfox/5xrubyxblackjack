@@ -3,10 +3,11 @@ const SPADES = 0, HEARTS=1, CLUBS=2, DIAMONDS=3;
 const cardIcons = Object.freeze({0:`♠`, 1:`♥`, 2:`♣`, 3:`♦`});
 const cardColors = Object.freeze({0:`black`, 1:`red`, 2:`black`, 3:`red`});
 const cardNum2Char = Object.freeze({1:`Ace`, 2:`2`, 3:`3`, 4:`4`, 5:`5`, 6:`6`, 7:`7`, 8:`8`, 9:`9`, 10:`10`, 11:`Jack`, 12:`QQ`, 13:`K`});
+const cardNum2Value = Object.freeze({1: 11, 2:2, 3:3, 4:4, 5:5, 6:6, 7:7, 8:8, 9:9, 10:10, 11:10, 12:10, 13:10});
 
 const GAME_PLAYER_PLAY = 0, 
       GAME_DEALER_PLAY=1, 
-      GAME_P_WINS=2, 
+      GAME_PLAYER_WINS=2, 
       GAME_DEALER_WINS=3,
       GAME_WELCOME=4,
       GAME_RESET=5;
@@ -15,15 +16,22 @@ let state = GAME_WELCOME;
 const deck = new Deck();
 const dealer = new Hand();
 const player = new Hand();
-let hitButton, standButton, newGameButton;
+let hitButton, standButton, newGameButton, labelPlayer, labelDealer,
+    dealerHand, playerHand;
 
 $( document ).ready(function() {
+    //initialize reference to dom objects
     dealer.setElements(document.querySelector(`.dealer-cards .deck`));
     player.setElements(document.querySelector(`.your-cards .deck`));
     
     hitButton = document.querySelector(`#action-hit`);
     standButton = document.querySelector(`#action-stand`);
     newGameButton = document.querySelector(`#action-new-game`);
+
+    labelDealer = document.querySelector(`.dealer-cards>h1`);
+    labelPlayer = document.querySelector(`.your-cards>h1`);
+    dealerHand = document.querySelector(`.dealer-cards`);
+    playerHand = document.querySelector(`.your-cards`);
     
     newGameButton.addEventListener(`click`, newGameHandler);
     hitButton.addEventListener(`click`, hitHandler);
@@ -36,7 +44,14 @@ $( document ).ready(function() {
 function hitHandler() {
     console.log(`hit!`)
     player.getCards(deck.getCards(1));
-    let score = player.getPoint();
+    let score = player.getPoints();
+    if(score === 21) {
+        state = GAME_PLAYER_WINS;
+    } else if (score > 21) {
+        state = GAME_DEALER_WINS;
+    } else if (player.hand.length == 5) {
+        state = GAME_PLAYER_WINS;
+    } 
     updateView();
 }
 
@@ -53,13 +68,14 @@ function newGameHandler() {
     dealer.emptyHand();
 
     player.getCards(deck.getCards(2));
-    hitButton.removeAttribute(`disabled`);
-    standButton.removeAttribute(`disabled`);
-    state = GAME_PLAYER_PLAY;
+    dealer.getCards(deck.getCards(1));
+    
+    
     updateView();
 }
 function standHandler() {
-    console.log(`stand!`)
+    state = GAME_DEALER_PLAY;
+    updateView();
 }
 
 
@@ -68,36 +84,69 @@ function viewCards() {
     player.viewCards();
 }
 
+function viewPoints() {
+    labelDealer.innerHTML = `莊家： ${dealer.getPoints()}點`
+    labelPlayer.innerHTML = `You： ${player.getPoints()}點`
+}
+
+function dealerPlay(playerPoints) {
+    dealer.getCards(deck.getCards(1))
+    
+    const dealerPoints = dealer.getPoints();
+    if(dealerPoints === 21) {
+        state = GAME_DEALER_WINS;
+    } else if(dealerPoints > 21) {
+        state = GAME_PLAYER_WINS;
+    } else if (dealer.hand.length == 5) {
+        state = GAME_DEALER_WINS;
+    } else {
+        if(dealerPoints >= playerPoints) {
+            state = GAME_DEALER_WINS; 
+        } else {
+            //dealer play again
+        }
+    }
+    updateView();
+}
+
 function updateView() {
     switch(state) {
         case GAME_RESET:
-            newGame();
+            hitButton.removeAttribute(`disabled`);
+            standButton.removeAttribute(`disabled`);
+            viewCards();
+            if(playerHand.classList.contains(`win`)) playerHand.classList.remove(`win`)
+            if(dealerHand.classList.contains(`win`)) dealerHand.classList.remove(`win`)
+            state = GAME_PLAYER_PLAY;
             break;
         case GAME_WELCOME:
             dealer.viewPoos();
             player.viewPoos();
             break;
         case GAME_PLAYER_PLAY:
-            viewCards();
+            player.viewCards();
             break;
+        case GAME_DEALER_PLAY:
+            hitButton.setAttribute(`disabled`, ``);
+            standButton.setAttribute(`disabled`, ``);
+            dealerPlay(player.getPoints());
+            break;
+        case GAME_DEALER_WINS:
+            viewCards();
+            hitButton.setAttribute(`disabled`, ``);
+            standButton.setAttribute(`disabled`, ``);
+            dealerHand.classList.add(`win`);
+            break
+        case GAME_PLAYER_WINS:
+            viewCards();
+            hitButton.setAttribute(`disabled`, ``);
+            standButton.setAttribute(`disabled`, ``);
+            playerHand.classList.add(`win`);
         default:
-            viewCards()
             break;
     }
+    viewPoints();
 }
-function playerHit() {
-    console.log(`hit!`);
-    //send card
-}
-
-function playerStand() {
-    console.log(`stand...`);
-}
-
-
-
-
-
 
 function Deck() {
     this.deck = [];//don't make sense when client sees everything
@@ -111,6 +160,8 @@ Deck.prototype.newDeck = function(){
         this.deck.push(new Card((i%13) + 1, Math.floor((i/13))))
     }
 };
+
+// Source: https://stackoverflow.com/questions/2450954/how-to-randomize-shuffle-a-javascript-array
 Deck.prototype.deckShuffle = function() {
     
     let array = this.deck;
@@ -127,9 +178,6 @@ Deck.prototype.deckShuffle = function() {
         array[currentIndex] = array[randomIndex];
         array[randomIndex] = temporaryValue;
     }
-    
-    return array;
-    
 }
 function Hand() {
     this.hand = [];
@@ -139,9 +187,23 @@ Hand.prototype.emptyHand = function() {
     this.hand.length = 0;
 }
 Hand.prototype.addCard = function (c) {
-    this.cards.push(c);
+    if(this.hand.length<5) this.cards.push(c);
 } 
-Hand.prototype.getPoint = function() {console.log(this.hand)};
+Hand.prototype.getPoints = function() {
+    let sum = 0, aceCount = 0;
+    this.hand.forEach((card, i)=>{
+        sum += cardNum2Value[card.num];
+        if(card.num === 1) {
+            aceCount += 1;
+        }
+    })
+    while(sum > 21 && aceCount>0) {
+        sum -= 10;
+        aceCount -= 1;
+    }
+    return sum;
+};
+
 Hand.prototype.getCards = function(cards) {
     cards.forEach(c => this.hand.push(c))
 };
@@ -156,12 +218,11 @@ Hand.prototype.viewPoos = function() {
 }
 Hand.prototype.viewCards = function () {
     for(let i=0; i<this.hand.length && i<5; i++) {
-        console.log(this.elements)
-        let face = this.elements.querySelector(`#Card${i+1}>div`);
-        console.log(face);
+        
+        let face = this.elements.querySelector(`.Card${i+1}>div`);
         face.innerHTML = cardNum2Char[this.hand[i].num];
         face.style.color = cardColors[this.hand[i].color];
-        let color = this.elements.querySelector(`#Card${i+1}>span`);
+        let color = this.elements.querySelector(`.Card${i+1}>span`);
         color.innerHTML = cardIcons[this.hand[i].color];
         color.style.color = cardColors[this.hand[i].color];
     }
